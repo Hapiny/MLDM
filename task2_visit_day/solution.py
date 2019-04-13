@@ -1,0 +1,50 @@
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+
+DATA_PATH = './train.csv'
+DAYS_IN_WEEK = 7
+DAYS_IN_DATASET = 1099
+
+def write_prediction_to_file(prediction):
+    header = "id,nextvisit"
+    with open("submission.csv", "w") as f:
+        print(header, file=f)
+        for idx, p in enumerate(prediction, 1):
+            print(f"{idx}, {p}", file=f)
+
+def get_week_number(visit):
+    return visit // DAYS_IN_WEEK + (1 if visit % DAYS_IN_WEEK else 0) 
+
+def get_probs(visits, delta=1.0, coef=None, recount=True):
+    weekday_probs = np.zeros(DAYS_IN_WEEK)
+    # compute week weights
+    for v in visits:
+        weekday = (v - 1) % 7
+        weekday_probs[weekday] += np.power(get_week_number(v), delta)
+    # normalization
+    if not coef:
+        weekday_probs = weekday_probs / coef
+    # recount probabilities
+    if recount:
+        negative_probs = 1 - weekday_probs
+        for i in range(1, DAYS_IN_WEEK):
+            weekday_probs[i] *= np.prod(negative_probs[:i])
+    
+    return weekday_probs
+
+if __name__ == '__main__':
+    # hyperparameter
+    delta = 1.1
+
+    data = pd.read_csv(DATA_PATH)
+    data.visits = data.visits.apply(lambda row: np.fromstring(row, dtype=int, sep=" "))
+    weeks_num = DAYS_IN_DATASET // DAYS_IN_WEEK # 1099 / 7 = 157
+    normalization_coef = np.sum([np.power(i, delta) for i in range(1, weeks_num + 1)])
+    prediction = list()
+    for row in tqdm(data.visits):
+        probs = get_probs(row, delta, coef=normalization_coef)
+        next_day_visit = np.argmax(probs) + 1
+        prediction.append(next_day_visit)
+    
+    write_prediction_to_file(prediction)
